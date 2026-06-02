@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Chat Cộng Đồng</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .chat-container {
+            width: 100%;
+            max-width: 600px;
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            overflow: hidden;
+        }
+        .chat-header {
+            background: #0084ff;
+            color: #fff;
+            padding: 15px 20px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background-color: #e5ddd5;
+        }
+        .message {
+            max-width: 80%;
+            padding: 10px 15px;
+            border-radius: 15px;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            word-wrap: break-word;
+        }
+        .message.my-message {
+            align-self: flex-end;
+            background: #d9fdd3;
+        }
+        .message-sender {
+            font-size: 12px;
+            font-weight: bold;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .message-content a {
+            color: #0066cc;
+            text-decoration: underline;
+        }
+        .chat-input-area {
+            display: flex;
+            padding: 15px;
+            background: #f0f0f0;
+            border-top: 1px solid #ccc;
+            gap: 10px;
+        }
+        #nameInput {
+            width: 25%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            outline: none;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            outline: none;
+        }
+        #sendBtn {
+            padding: 10px 20px;
+            background: #0084ff;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #sendBtn:hover {
+            background: #006bce;
+        }
+        .author-credit {
+            text-align: center;
+            font-size: 11px;
+            color: #888;
+            padding: 5px;
+            background: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="chat-header">Phòng Chat Chung</div>
+    
+    <div class="chat-messages" id="chat-messages">
+        </div>
+
+    <div class="chat-input-area">
+        <input type="text" id="nameInput" placeholder="Tên của bạn...">
+        <input type="text" id="messageInput" placeholder="Nhập tin nhắn hoặc dán link...">
+        <button id="sendBtn">Gửi</button>
+    </div>
+    
+    <div class="author-credit">
+        Code & Lập trình bởi: Minh Fansub PTL
+    </div>
+</div>
+
+<script type="module">
+    // Import các hàm bạn cần từ SDKs Firebase phiên bản 12.14.0
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
+    import { getDatabase, ref, push, onChildAdded } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
+
+    // Cấu hình ứng dụng Web Firebase của bạn
+    const firebaseConfig = {
+        apiKey: "AIzaSyBxKPm6nK9CECuFfKDqt5V5PP0fGmY_sSo",
+        authDomain: "congdongchat-92982.firebaseapp.com",
+        projectId: "congdongchat-92982",
+        storageBucket: "congdongchat-92982.firebasestorage.app",
+        messagingSenderId: "812041517949",
+        appId: "1:812041517949:web:1c715d41caf011926a2a14",
+        measurementId: "G-DESF5PPDG4",
+        // databaseURL giúp SDK xác định chính xác địa chỉ lưu trữ cơ sở dữ liệu thời gian thực
+        databaseURL: "https://congdongchat-92982-default-rtdb.firebaseio.com"
+    };
+
+    // Khởi tạo Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getDatabase(app);
+    const messagesRef = ref(db, "messages");
+
+    // Lấy các phần tử HTML để tương tác
+    const nameInput = document.getElementById("nameInput");
+    const messageInput = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const chatMessages = document.getElementById("chat-messages");
+
+    // Hàm nhận diện link trong nội dung tin nhắn và tự động chuyển đổi thành thẻ <a> có thể click
+    function linkify(text) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return text.replace(urlRegex, function(url) {
+            return '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+        });
+    }
+
+    // Hàm thực hiện gửi tin nhắn
+    function sendMessage() {
+        const name = nameInput.value.trim();
+        const text = messageInput.value.trim();
+
+        if (name === "") {
+            alert("Vui lòng nhập tên của bạn!");
+            return;
+        }
+        if (text === "") {
+            return;
+        }
+
+        // Đẩy dữ liệu tin nhắn lên Firebase Realtime Database
+        push(messagesRef, {
+            name: name,
+            text: text,
+            timestamp: Date.now()
+        });
+
+        // Làm trống ô nhập liệu sau khi gửi thành công
+        messageInput.value = "";
+    }
+
+    // Gắn sự kiện click nút Gửi và nhấn phím Enter
+    sendBtn.addEventListener("click", sendMessage);
+    messageInput.addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+            sendMessage();
+        }
+    });
+
+    // Lắng nghe các tin nhắn mới được thêm vào database theo thời gian thực (Real-time)
+    onChildAdded(messagesRef, (snapshot) => {
+        const data = snapshot.val();
+        
+        const messageDiv = document.createElement("div");
+        messageDiv.classList.add("message");
+        
+        // Kiểm tra nếu là tin nhắn của chính người dùng hiện tại để đổi màu bong bóng chat
+        if (data.name === nameInput.value.trim() && data.name !== "") {
+            messageDiv.classList.add("my-message");
+        }
+
+        const senderDiv = document.createElement("div");
+        senderDiv.classList.add("message-sender");
+        senderDiv.textContent = data.name;
+
+        const contentDiv = document.createElement("div");
+        contentDiv.classList.add("message-content");
+        contentDiv.innerHTML = linkify(data.text);
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        
+        chatMessages.appendChild(messageDiv);
+
+        // Cuộn khung chat xuống dưới cùng để người dùng thấy tin nhắn mới nhất
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+</script>
+
+</body>
+</html>
